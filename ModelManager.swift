@@ -2,7 +2,6 @@
 //  ModelManager.swift
 //  CoreData
 //
-//  Created by Diego Prados on 13/08/14.
 //  Copyright (c) 2014 Diego Prados. All rights reserved.
 //
 
@@ -15,95 +14,76 @@ class ModelManager: NSObject {
     
     // MARK: - Singleton init
     
-    struct Static {
-        static var token : dispatch_once_t = 0
-        static var instance : ModelManager?
-    }
+    static let instance = ModelManager()
+    private override init() {}
     
-    class var instance: ModelManager {
-    dispatch_once(&Static.token) {  Static.instance = ModelManager() }
-        return Static.instance!
-    }
+    // MARK: - Core Data stack
     
-    override init () {
-        assert(Static.instance == nil, "Singleton already initialized!")
-    }
-    
-    // MARK: - CoreData methods
-
     lazy var applicationDocumentsDirectory: NSURL = {
-        // The directory the application uses to store the Core Data store file. This code uses a directory named "com.dprados.CoreDataSpike" in the application's documents Application Support directory.
+        // The directory the application uses to store the Core Data store file. This code uses a directory named "com.dprados.YourProject" in the application's documents Application Support directory.
         let urls = NSFileManager.defaultManager().URLsForDirectory(.DocumentDirectory, inDomains: .UserDomainMask)
-        return urls[urls.count-1] as NSURL
-    }()
-
+        return urls[urls.count-1]
+        }()
+    
     lazy var managedObjectModel: NSManagedObjectModel = {
         // The managed object model for the application. This property is not optional. It is a fatal error for the application not to be able to find and load its model.
-        let modelURL = NSBundle.mainBundle().URLForResource("yourDataModelName", withExtension: "momd")
-        return NSManagedObjectModel(contentsOfURL: modelURL!)!
-    }()
-
-    lazy var persistentStoreCoordinator: NSPersistentStoreCoordinator? = {
-        // The persistent store coordinator for the application. This implementation creates and return a coordinator, having added the store for the application to it. This property is optional since there are legitimate error conditions that could cause the creation of the store to fail.
-        
+        let modelURL = NSBundle.mainBundle().URLForResource("yourDataModelName", withExtension: "momd")!
+        return NSManagedObjectModel(contentsOfURL: modelURL)!
+        }()
+    
+    lazy var persistentStoreCoordinator: NSPersistentStoreCoordinator = {
+        // The persistent store coordinator for the application. This implementation creates and returns a coordinator, having added the store for the application to it. This property is optional since there are legitimate error conditions that could cause the creation of the store to fail.
         // Create the coordinator and store
-        var coordinator: NSPersistentStoreCoordinator? = NSPersistentStoreCoordinator(managedObjectModel: self.managedObjectModel)
-        
+        let coordinator = NSPersistentStoreCoordinator(managedObjectModel: self.managedObjectModel)
         // iCloud notification subscriptions
-        var notificacionCenter: NSNotificationCenter = NSNotificationCenter.defaultCenter()
+        let notificacionCenter: NSNotificationCenter = NSNotificationCenter.defaultCenter()
         notificacionCenter.addObserver(self, selector: "storesWillChange:", name:NSPersistentStoreCoordinatorStoresWillChangeNotification, object: coordinator)
         notificacionCenter.addObserver(self, selector: "storesDidChange:", name:NSPersistentStoreCoordinatorStoresDidChangeNotification, object: coordinator)
         notificacionCenter.addObserver(self, selector: "persistentStoreDidImportUbiquitousContentChanges:", name:NSPersistentStoreDidImportUbiquitousContentChangesNotification, object: coordinator)
-        
         let url = self.applicationDocumentsDirectory.URLByAppendingPathComponent("yourDataModelName.sqlite")
         var error: NSError? = nil
         var failureReason = "There was an error creating or loading the application's saved data."
         var options: NSDictionary = [NSMigratePersistentStoresAutomaticallyOption : NSNumber(bool: true), NSInferMappingModelAutomaticallyOption : NSNumber(bool: true),
-            NSPersistentStoreUbiquitousContentNameKey : "inGameStatsHoopsCloudStore"]
-        if coordinator!.addPersistentStoreWithType(NSSQLiteStoreType, configuration: nil, URL: url, options: options, error: &error) == nil {
-            coordinator = nil
+            NSPersistentStoreUbiquitousContentNameKey : "yourDataModelNameCloudStore"]
+        
+        do {
+            try coordinator.addPersistentStoreWithType(NSSQLiteStoreType, configuration: nil, URL: url, options: options as [NSObject : AnyObject])
+        } catch {
             // Report any error we got.
-            let dict = NSMutableDictionary()
+            var dict = [String: AnyObject]()
             dict[NSLocalizedDescriptionKey] = "Failed to initialize the application's saved data"
             dict[NSLocalizedFailureReasonErrorKey] = failureReason
-            dict[NSUnderlyingErrorKey] = error
-            error = NSError(domain: "YOUR_ERROR_DOMAIN", code: 9999, userInfo: dict)
+            
+            dict[NSUnderlyingErrorKey] = error as! NSError
+            let wrappedError = NSError(domain: "YOUR_ERROR_DOMAIN", code: 9999, userInfo: dict)
             // Replace this with code to handle the error appropriately.
             // abort() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-            NSLog("Unresolved error \(error), \(error!.userInfo)")
+            NSLog("Unresolved error \(wrappedError), \(wrappedError.userInfo)")
             abort()
         }
         
         return coordinator
-    }()
-
-    lazy var managedObjectContext: NSManagedObjectContext? = {
+        }()
+    
+    lazy var managedObjectContext: NSManagedObjectContext = {
         // Returns the managed object context for the application (which is already bound to the persistent store coordinator for the application.) This property is optional since there are legitimate error conditions that could cause the creation of the context to fail.
         let coordinator = self.persistentStoreCoordinator
-        if coordinator == nil {
-            return nil
-        }
         var managedObjectContext = NSManagedObjectContext(concurrencyType: .MainQueueConcurrencyType)
-        managedObjectContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
         managedObjectContext.persistentStoreCoordinator = coordinator
         return managedObjectContext
-    }()
+        }()
     
-    // MARK: - Methods
-    
-    func startModel() {
-        let moc = self.managedObjectContext
-    }
-
     // MARK: - Core Data Saving support
-
+    
     func saveContext () {
-        if let moc = self.managedObjectContext {
-            var error: NSError? = nil
-            if moc.hasChanges && !moc.save(&error) {
+        if managedObjectContext.hasChanges {
+            do {
+                try managedObjectContext.save()
+            } catch {
                 // Replace this implementation with code to handle the error appropriately.
                 // abort() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                NSLog("Unresolved error \(error), \(error!.userInfo)")
+                let nserror = error as! NSError
+                NSLog("Unresolved error \(nserror), \(nserror.userInfo)")
                 abort()
             }
         }
@@ -112,61 +92,64 @@ class ModelManager: NSObject {
     // MARK: - Core Data discard changes
     
     func discardChanges() {
-        self.managedObjectContext?.rollback()
+        self.managedObjectContext.rollback()
     }
     
     // MARK: - iCloud Notifications
     
     func persistentStoreDidImportUbiquitousContentChanges(notification: NSNotification) {
-        println(notification.userInfo?.description)
-        var moc: NSManagedObjectContext = self.managedObjectContext!
+        print(notification.userInfo?.description)
+        let moc: NSManagedObjectContext = self.managedObjectContext
         moc.performBlock { () -> Void in
             moc.mergeChangesFromContextDidSaveNotification(notification)
-            var changes: NSDictionary = notification.userInfo!
-            var allChanges: NSMutableSet = NSMutableSet()
-            allChanges.unionSet(changes.valueForKey(NSInsertedObjectsKey) as NSSet)
-            allChanges.unionSet(changes.valueForKey(NSUpdatedObjectsKey) as NSSet)
-            allChanges.unionSet(changes.valueForKey(NSDeletedObjectsKey) as NSSet)
+            let changes: NSDictionary = notification.userInfo!
+            let allChanges: NSMutableSet = NSMutableSet()
+            allChanges.unionSet(changes.valueForKey(NSInsertedObjectsKey) as! NSSet as Set<NSObject>)
+            allChanges.unionSet(changes.valueForKey(NSUpdatedObjectsKey) as! NSSet as Set<NSObject>)
+            allChanges.unionSet(changes.valueForKey(NSDeletedObjectsKey) as! NSSet as Set<NSObject>)
         }
         NSNotificationCenter.defaultCenter().postNotificationName(kCoreDataUpdated, object: self)
     }
-   
+    
     func storesWillChange(notification: NSNotification) {
-        var moc: NSManagedObjectContext = self.managedObjectContext!
+        let moc: NSManagedObjectContext = self.managedObjectContext
         moc.performBlockAndWait { () -> Void in
-            var error: NSError?
             if moc.hasChanges {
-                moc.save(&error)
+                do {
+                    try moc.save()
+                } catch {
+                    
+                }
             }
             moc.reset()
         }
     }
-
+    
     func storesDidChange(notification: NSNotification) {
         // here is when you can refresh your UI and
         // load new data from the new store
     }
-
+    
     // MARK: - Object creation
-
+    
     func insertNewEntityName (entityName: String) -> AnyObject {
-        return NSEntityDescription.insertNewObjectForEntityForName(entityName, inManagedObjectContext: self.managedObjectContext!);
+        return NSEntityDescription.insertNewObjectForEntityForName(entityName, inManagedObjectContext: self.managedObjectContext);
     }
-
+    
     // MARK: - Object deletion
-
+    
     func deleteObject(object:NSManagedObject) {
-        self.managedObjectContext?.deleteObject(object)
+        self.managedObjectContext.deleteObject(object)
     }
-
+    
     // MARK: - Object search
-
+    
     func fetchEntity(entityName: String, identifier: String?, managedObjectContext: NSManagedObjectContext) -> AnyObject? {
         var predicate: NSPredicate?
         if identifier != nil {
             predicate = NSPredicate(format: "identifier == %@", identifier!)
         }
-        let results: [AnyObject]? = self.fetchEntities(entityName, predicate: predicate, sortDescriptors: [], fetchLimit: 1, context: self.managedObjectContext!)
+        let results: [AnyObject]? = self.fetchEntities(entityName, predicate: predicate, sortDescriptors: [], fetchLimit: 1, context: self.managedObjectContext)
         var result: AnyObject? = nil
         if results?.count > 0 {
             result = results?[0]
@@ -187,7 +170,7 @@ class ModelManager: NSObject {
     }
     
     func fetchEntities(entityName: String, predicate: NSPredicate?, sortDescriptors: [NSSortDescriptor]?, fetchLimit: Int) -> [AnyObject]? {
-        return self.fetchEntities(entityName, predicate: predicate, sortDescriptors: sortDescriptors, fetchLimit: fetchLimit, context: self.managedObjectContext!)
+        return self.fetchEntities(entityName, predicate: predicate, sortDescriptors: sortDescriptors, fetchLimit: fetchLimit, context: self.managedObjectContext)
     }
     
     func fetchEntities(entityName: String, predicate: NSPredicate?, sortKey: String?, fetchLimit: Int) -> [AnyObject]? {
@@ -197,18 +180,19 @@ class ModelManager: NSObject {
         }
         return self.fetchEntities(entityName, predicate: predicate, sortDescriptors: sortDescriptors, fetchLimit: fetchLimit)
     }
-
+    
     func fetchEntities(entityName: String, predicate: NSPredicate?, sortDescriptors: [NSSortDescriptor]?, fetchLimit: Int, context: NSManagedObjectContext!) -> [AnyObject]! {
-        var fetchRequest: NSFetchRequest! = NSFetchRequest(entityName: entityName)
+        let fetchRequest: NSFetchRequest! = NSFetchRequest(entityName: entityName)
         fetchRequest.predicate = predicate
         fetchRequest.sortDescriptors = sortDescriptors
         if fetchLimit != 0 {
             fetchRequest.fetchLimit = fetchLimit
         }
-        var error: NSError? = nil
-        var results = context.executeFetchRequest(fetchRequest, error: &error)
-        if error != nil {
-            println("Error fetching entity \(entityName): \(error), \(error?.userInfo)")
+        var results: [AnyObject] = []
+        do {
+            results = try context.executeFetchRequest(fetchRequest)
+        } catch {
+            print("Error fetching entity \(entityName)")
         }
         return results
     }
